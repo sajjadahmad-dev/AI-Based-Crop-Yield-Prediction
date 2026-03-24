@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# FastAPI / local runtime
+*.log
+backend/crop.db
+backend/crop.db-*
+backend/model.pkl
+
+# Frontend (Vite / Node)
+frontend/node_modules/
+frontend/dist/
+
+# Environment and secrets
+.env
+.env.*
+frontend/.env
+backend/.env
+
+# Keep template env files in repo
+!*.env.example
+!frontend/.env.example
+!backend/.env.example
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
