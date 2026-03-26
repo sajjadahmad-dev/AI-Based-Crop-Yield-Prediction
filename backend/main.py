@@ -16,17 +16,36 @@ from sqlalchemy.orm import Session, declarative_base, relationship, sessionmaker
 
 app = FastAPI()
 
-frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
+
+def parse_frontend_origins(raw_origins: str):
+    origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+    if not origins:
+        origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    return origins
+
+
+frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173,http://127.0.0.1:5173")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[frontend_origin, "http://127.0.0.1:5173"],
+    allow_origins=parse_frontend_origins(frontend_origin),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 default_db_path = Path(__file__).resolve().parent / "crop.db"
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{default_db_path.as_posix()}")
+
+
+def normalize_database_url(url: str):
+    if url.startswith("sqlite:///"):
+        db_file = url.replace("sqlite:///", "", 1)
+        if db_file.startswith("./"):
+            resolved = (Path(__file__).resolve().parent / db_file[2:]).resolve()
+            return f"sqlite:///{resolved.as_posix()}"
+    return url
+
+
+DATABASE_URL = normalize_database_url(os.getenv("DATABASE_URL", f"sqlite:///{default_db_path.as_posix()}"))
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-this-secret-key-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
@@ -40,6 +59,7 @@ Base = declarative_base()
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
 
 class User(Base):
@@ -118,6 +138,24 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
+def get_current_user_optional(
+    token: Optional[str] = Depends(oauth2_scheme_optional),
+    db: Session = Depends(get_db),
+):
+    if not token:
+        return None
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email = payload.get("sub")
+        if email is None:
+            return None
+    except JWTError:
+        return None
+
+    return db.query(User).filter(User.email == email).first()
+
+
 model_path = Path(__file__).resolve().parent / "model.pkl"
 model = pickle.load(open(model_path, "rb"))
 
@@ -145,6 +183,11 @@ class AuthResponse(BaseModel):
     user: AuthUser
 
 
+class RegisterResponse(BaseModel):
+    message: str
+    email: EmailStr
+
+
 class CropInput(BaseModel):
     Area: int
     Item: int
@@ -166,7 +209,7 @@ class PredictionHistoryOut(BaseModel):
     created_at: datetime
 
 
-@app.post("/auth/register", response_model=AuthResponse)
+@app.post("/auth/register", response_model=RegisterResponse)
 def register(data: RegisterInput, db: Session = Depends(get_db)):
     if len(data.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
@@ -184,11 +227,9 @@ def register(data: RegisterInput, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_user)
 
-    token = create_access_token({"sub": new_user.email})
     return {
-        "access_token": token,
-        "token_type": "bearer",
-        "user": {"id": new_user.id, "name": new_user.name, "email": new_user.email},
+        "message": "Account created successfully. Please log in.",
+        "email": new_user.email,
     }
 
 
@@ -220,7 +261,7 @@ def home():
 def predict(
     data: CropInput,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     # The trained model expects 7 features due to a saved index-like column.
     # Keep it fixed at 0 to preserve the current request schema.
@@ -239,18 +280,19 @@ def predict(
     prediction = model.predict(input_data)
     predicted_value = float(prediction[0])
 
-    prediction_record = Prediction(
-        user_id=current_user.id,
-        area=data.Area,
-        item=data.Item,
-        year=data.Year,
-        average_rainfall=data.average_rainfall,
-        pesticides=data.pesticides,
-        avg_temp=data.avg_temp,
-        predicted_yield=predicted_value,
-    )
-    db.add(prediction_record)
-    db.commit()
+    if current_user:
+        prediction_record = Prediction(
+            user_id=current_user.id,
+            area=data.Area,
+            item=data.Item,
+            year=data.Year,
+            average_rainfall=data.average_rainfall,
+            pesticides=data.pesticides,
+            avg_temp=data.avg_temp,
+            predicted_yield=predicted_value,
+        )
+        db.add(prediction_record)
+        db.commit()
 
     return {"predicted_yield": predicted_value}
 

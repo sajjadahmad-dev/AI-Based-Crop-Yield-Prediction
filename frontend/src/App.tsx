@@ -64,9 +64,35 @@ interface PredictionResult {
 }
 
 interface User {
+  id?: number
   name: string
   email: string
 }
+
+interface PredictionHistoryItem {
+  id: number
+  area: number
+  item: number
+  year: number
+  average_rainfall: number
+  pesticides: number
+  avg_temp: number
+  predicted_yield: number
+  created_at: string
+}
+
+interface RegisterResponse {
+  message: string
+  email: string
+}
+
+interface LoginResponse {
+  access_token: string
+  token_type: string
+  user: User
+}
+
+const API_BASE_URL = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/$/, '')
 
 // Mock weather data for cities
 const cityWeatherData: Record<string, { rainfall: number; temperature: number }> = {
@@ -106,7 +132,8 @@ function Navbar({
   user, 
   onLogout, 
   onLoginClick, 
-  onRegisterClick 
+  onRegisterClick,
+  onAccountClick
 }: { 
   activeSection: string
   scrollToSection: (id: string) => void
@@ -114,6 +141,7 @@ function Navbar({
   onLogout: () => void
   onLoginClick: () => void
   onRegisterClick: () => void
+  onAccountClick: () => void
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isScrolled, setIsScrolled] = useState(false)
@@ -182,6 +210,17 @@ function Navbar({
                     {user.name}
                   </span>
                 </div>
+                <button
+                  onClick={onAccountClick}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
+                    isScrolled
+                      ? 'text-emerald-700 hover:bg-emerald-50'
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <BarChart3 className="w-4 h-4" />
+                  <span className="font-medium">My Account</span>
+                </button>
                 <button
                   onClick={onLogout}
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
@@ -264,6 +303,16 @@ function Navbar({
                     </div>
                     <button
                       onClick={() => {
+                        onAccountClick()
+                        setIsMenuOpen(false)
+                      }}
+                      className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-emerald-700 hover:bg-emerald-50 transition-all"
+                    >
+                      <BarChart3 className="w-5 h-5" />
+                      <span className="font-medium">My Account</span>
+                    </button>
+                    <button
+                      onClick={() => {
                         onLogout()
                         setIsMenuOpen(false)
                       }}
@@ -324,12 +373,29 @@ function LoginPage({ onLogin, onSwitchToRegister }: { onLogin: (user: User) => v
     }
 
     setIsLoading(true)
-    
-    // Simulate API call
-    setTimeout(() => {
-      onLogin({ name: 'Demo User', email })
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        setError(data?.detail || 'Login failed. Please check your credentials.')
+        return
+      }
+
+      const loginData = data as LoginResponse
+      localStorage.setItem('access_token', loginData.access_token)
+      localStorage.setItem('user', JSON.stringify(loginData.user))
+      onLogin(loginData.user)
+    } catch {
+      setError('Unable to connect to server. Please try again.')
+    } finally {
       setIsLoading(false)
-    }, 1500)
+    }
   }
 
   return (
@@ -428,7 +494,7 @@ function LoginPage({ onLogin, onSwitchToRegister }: { onLogin: (user: User) => v
 }
 
 // Register Page Component
-function RegisterPage({ onRegister, onSwitchToLogin }: { onRegister: (user: User) => void; onSwitchToLogin: () => void }) {
+function RegisterPage({ onSwitchToLogin }: { onSwitchToLogin: () => void }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -436,6 +502,7 @@ function RegisterPage({ onRegister, onSwitchToLogin }: { onRegister: (user: User
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState<RegisterResponse | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -452,12 +519,56 @@ function RegisterPage({ onRegister, onSwitchToLogin }: { onRegister: (user: User
     }
 
     setIsLoading(true)
-    
-    // Simulate API call
-    setTimeout(() => {
-      onRegister({ name, email })
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        setError(data?.detail || 'Registration failed. Please try again.')
+        return
+      }
+
+      setSuccess(data as RegisterResponse)
+    } catch {
+      setError('Unable to connect to server. Please try again.')
+    } finally {
       setIsLoading(false)
-    }, 1500)
+    }
+  }
+
+  if (success) {
+    return (
+      <div className="min-h-screen gradient-bg flex items-center justify-center px-4 py-24">
+        <div className="w-full max-w-md">
+          <Card className="glass-card overflow-hidden">
+            <div className="bg-gradient-to-r from-emerald-500 to-teal-500 p-8 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center mx-auto mb-4">
+                <CheckCircle2 className="w-8 h-8 text-white" />
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-2">Account Created</h2>
+              <p className="text-emerald-50">{success.message}</p>
+            </div>
+            <CardContent className="p-8 space-y-4">
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm">
+                Registered email: {success.email}
+              </div>
+              <Button
+                onClick={onSwitchToLogin}
+                className="w-full btn-primary-gradient py-6 text-lg rounded-xl"
+              >
+                <LogIn className="w-5 h-5 mr-2" />
+                Go To Login
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -583,6 +694,58 @@ function RegisterPage({ onRegister, onSwitchToLogin }: { onRegister: (user: User
   )
 }
 
+function PredictionHistorySection({ history }: { history: PredictionHistoryItem[] }) {
+  return (
+    <section id="history" className="py-24 bg-white">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-10">
+          <h2 className="text-3xl sm:text-4xl font-bold text-emerald-900 mb-3">My Prediction History</h2>
+          <p className="text-emerald-700/70">All predictions saved while you were logged in.</p>
+        </div>
+
+        <Card className="glass-card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-emerald-50">
+                <tr>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-emerald-800">Date</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-emerald-800">Area ID</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-emerald-800">Crop ID</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-emerald-800">Year</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-emerald-800">Rainfall</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-emerald-800">Temp</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-emerald-800">Predicted Yield</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-emerald-100">
+                {history.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-10 text-center text-emerald-700/70">
+                      No history yet. Make a prediction to see it here.
+                    </td>
+                  </tr>
+                ) : (
+                  history.map((row) => (
+                    <tr key={row.id} className="hover:bg-emerald-50/50 transition-colors">
+                      <td className="px-6 py-4 text-gray-700">{new Date(row.created_at).toLocaleString()}</td>
+                      <td className="px-6 py-4 text-gray-700">{row.area}</td>
+                      <td className="px-6 py-4 text-gray-700">{row.item}</td>
+                      <td className="px-6 py-4 text-gray-700">{row.year}</td>
+                      <td className="px-6 py-4 text-gray-700">{row.average_rainfall}</td>
+                      <td className="px-6 py-4 text-gray-700">{row.avg_temp}</td>
+                      <td className="px-6 py-4 font-semibold text-emerald-700">{row.predicted_yield.toFixed(2)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+    </section>
+  )
+}
+
 // Hero Section
 function HeroSection({ scrollToSection }: { scrollToSection: (id: string) => void }) {
   return (
@@ -604,7 +767,7 @@ function HeroSection({ scrollToSection }: { scrollToSection: (id: string) => voi
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-32 text-center">
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white/90 text-sm font-medium mb-8 animate-fade-in">
           <GraduationCap className="w-4 h-4" />
-          <span>Demo University - Campus XYZ</span>
+          <span>University of Agriculture, Faisalabad Sub Campus Toba Tek Singh</span>
         </div>
 
         <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-6 animate-slide-up">
@@ -675,7 +838,7 @@ function HeroSection({ scrollToSection }: { scrollToSection: (id: string) => voi
 }
 
 // Enhanced Prediction Form Section
-function PredictionSection({ onPrediction }: { onPrediction: (result: PredictionResult) => void }) {
+function PredictionSection({ onPrediction, user }: { onPrediction: (result: PredictionResult) => void; user: User | null }) {
   const [formData, setFormData] = useState<PredictionFormData>({
     area: '',
     cropType: '',
@@ -709,6 +872,16 @@ function PredictionSection({ onPrediction }: { onPrediction: (result: Prediction
     'Wheat', 'Rice', 'Cotton', 'Sugarcane', 'Maize',
     'Barley', 'Gram', 'Rapeseed', 'Sunflower', 'Soybean'
   ]
+
+  const areaToId = (areaName: string) => {
+    const idx = areas.indexOf(areaName)
+    return idx >= 0 ? idx + 1 : 1
+  }
+
+  const cropToId = (cropName: string) => {
+    const idx = cropTypes.indexOf(cropName)
+    return idx >= 0 ? idx + 1 : 1
+  }
 
   const handleCityChange = (city: string) => {
     setSelectedCity(city)
@@ -797,52 +970,43 @@ function PredictionSection({ onPrediction }: { onPrediction: (result: Prediction
     setIsLoading(true)
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/predict', {
+      const token = localStorage.getItem('access_token')
+      const response = await fetch(`${API_BASE_URL}/predict`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
-          area: formData.area,
-          crop_type: formData.cropType,
-          year: parseInt(formData.year),
-          rainfall: parseFloat(formData.rainfall),
-          temperature: parseFloat(formData.temperature),
+          Area: areaToId(formData.area),
+          Item: cropToId(formData.cropType),
+          Year: parseInt(formData.year),
+          average_rainfall: parseFloat(formData.rainfall),
           pesticides: parseFloat(formData.pesticides),
-          soil_ph: parseFloat(formData.soilPh),
-          nitrogen: parseFloat(formData.nitrogen),
-          phosphorus: parseFloat(formData.phosphorus),
-          potassium: parseFloat(formData.potassium),
+          avg_temp: parseFloat(formData.temperature),
         }),
       })
 
       if (!response.ok) {
-        throw new Error('Prediction failed')
+        const failure = await response.json().catch(() => null)
+        throw new Error(failure?.detail || 'Prediction failed')
       }
 
       const data = await response.json()
       onPrediction({
-        predictedYield: data.predicted_yield || Math.round(Math.random() * 5000 + 2000),
-        confidence: data.confidence || 92,
-        recommendations: data.recommendations || [
+        predictedYield: data.predicted_yield,
+        confidence: 92,
+        recommendations: [
           'Optimal irrigation schedule recommended',
           'Consider organic fertilizer application',
           'Monitor pest activity closely'
         ]
       })
     } catch (err) {
-      // Fallback for demo when backend is not available
-      setTimeout(() => {
-        onPrediction({
-          predictedYield: Math.round(Math.random() * 5000 + 2000),
-          confidence: Math.round(Math.random() * 10 + 85),
-          recommendations: [
-            'Optimal irrigation schedule recommended',
-            'Consider organic fertilizer application',
-            'Monitor pest activity closely'
-          ]
-        })
-      }, 1500)
+      const message = err instanceof Error ? err.message : 'Prediction failed'
+      setError(message)
     } finally {
-      setTimeout(() => setIsLoading(false), 1500)
+      setIsLoading(false)
     }
   }
 
@@ -1284,6 +1448,12 @@ function PredictionSection({ onPrediction }: { onPrediction: (result: Prediction
                     </>
                   )}
                 </Button>
+
+                <p className="text-xs text-emerald-700/70 text-center">
+                  {user
+                    ? 'Logged in: your prediction will be saved to history.'
+                    : 'Not logged in: prediction works, but history will not be saved.'}
+                </p>
               </form>
             </CardContent>
           </Card>
@@ -1583,7 +1753,10 @@ function AboutSection() {
             About The Project
           </h2>
           <p className="max-w-3xl mx-auto text-emerald-700/70">
-            Dummy project summary text for demonstration purposes only.
+            Agriculture plays a very important role in the economy, but farmers often face losses due to
+            unpredictable weather and poor soil conditions. This AI-based system uses weather and soil data
+            to predict crop yield in advance so farmers can make better decisions for irrigation, fertilizer,
+            and crop planning.
           </p>
         </div>
 
@@ -1613,23 +1786,43 @@ function AboutSection() {
             <CardContent className="p-6 space-y-4">
               <div className="flex justify-between py-3 border-b border-emerald-100">
                 <span className="text-gray-600">Project Title</span>
-                <span className="font-medium text-emerald-900 text-right">Demo Project Title</span>
+                <span className="font-medium text-emerald-900 text-right">AI-Based Crop Yield Prediction Using Weather and Soil Data</span>
+              </div>
+              <div className="flex justify-between py-3 border-b border-emerald-100">
+                <span className="text-gray-600">Project ID</span>
+                <span className="font-medium text-emerald-900 text-right">To be allowed by Project Advisor</span>
               </div>
               <div className="flex justify-between py-3 border-b border-emerald-100">
                 <span className="text-gray-600">University</span>
-                <span className="font-medium text-emerald-900 text-right">Demo University - Campus XYZ</span>
+                <span className="font-medium text-emerald-900 text-right">University of Agriculture, Faisalabad Sub Campus Toba Tek Singh</span>
+              </div>
+              <div className="flex justify-between py-3 border-b border-emerald-100">
+                <span className="text-gray-600">Name of Student</span>
+                <span className="font-medium text-emerald-900">Muhammad Nadeem</span>
+              </div>
+              <div className="flex justify-between py-3 border-b border-emerald-100">
+                <span className="text-gray-600">Regd #</span>
+                <span className="font-medium text-emerald-900">2022-ag-6270</span>
               </div>
               <div className="flex justify-between py-3 border-b border-emerald-100">
                 <span className="text-gray-600">Program</span>
-                <span className="font-medium text-emerald-900">Demo Program</span>
+                <span className="font-medium text-emerald-900">BS CS</span>
+              </div>
+              <div className="flex justify-between py-3 border-b border-emerald-100">
+                <span className="text-gray-600">Semester</span>
+                <span className="font-medium text-emerald-900">7th</span>
               </div>
               <div className="flex justify-between py-3 border-b border-emerald-100">
                 <span className="text-gray-600">Session</span>
-                <span className="font-medium text-emerald-900">20XX-20YY</span>
+                <span className="font-medium text-emerald-900">2022-2026</span>
+              </div>
+              <div className="flex justify-between py-3 border-b border-emerald-100">
+                <span className="text-gray-600">Date</span>
+                <span className="font-medium text-emerald-900">____________</span>
               </div>
               <div className="flex justify-between py-3">
                 <span className="text-gray-600">Nature</span>
-                <span className="font-medium text-emerald-900">Demo Nature</span>
+                <span className="font-medium text-emerald-900">Software-Based</span>
               </div>
             </CardContent>
           </Card>
@@ -1644,11 +1837,12 @@ function AboutSection() {
             <CardContent className="p-6">
               <div className="space-y-4">
                 {[
-                  { category: 'Frontend', tech: 'Demo Frontend Stack' },
-                  { category: 'Backend', tech: 'Demo Backend Stack' },
-                  { category: 'ML Libraries', tech: 'Demo ML Stack' },
-                  { category: 'Database', tech: 'Demo Database' },
-                  { category: 'Visualization', tech: 'Demo Visualization' },
+                  { category: 'Language', tech: 'Python' },
+                  { category: 'ML Libraries', tech: 'Pandas, NumPy, Scikit-learn' },
+                  { category: 'Model', tech: 'Linear Regression / Random Forest' },
+                  { category: 'Database', tech: 'CSV File / MySQL' },
+                  { category: 'Frontend', tech: 'HTML, CSS, Bootstrap' },
+                  { category: 'Backend', tech: 'Flask' },
                 ].map((item, index) => (
                   <div key={index} className="flex items-center gap-4">
                     <div className="w-24 text-sm font-medium text-gray-500">{item.category}</div>
@@ -1678,11 +1872,11 @@ function Footer() {
                 <Sprout className="w-6 h-6 text-white" />
               </div>
               <span className="font-bold text-xl">
-                Demo<span className="text-emerald-400">App</span>
+                CropYield<span className="text-emerald-400">AI</span>
               </span>
             </div>
             <p className="text-emerald-200/70 max-w-md mb-6">
-              Dummy project description for UI preview only.
+              Final Year Project Proposal focused on AI-based crop yield prediction using weather and soil data.
             </p>
             <div className="flex gap-3">
               {['SDG 2', 'SDG 9', 'SDG 13'].map((sdg) => (
@@ -1699,17 +1893,17 @@ function Footer() {
               Student
             </h4>
             <div className="space-y-3 text-emerald-200/70">
-              <p className="font-medium text-white">Demo User Name</p>
+              <p className="font-medium text-white">Muhammad Nadeem</p>
               <p className="flex items-center gap-2 text-sm">
-                <span className="text-emerald-400">Reg#</span> DEMO-0000
+                <span className="text-emerald-400">Reg#</span> 2022-ag-6270
               </p>
               <p className="flex items-center gap-2 text-sm">
                 <Mail className="w-4 h-4 text-emerald-400" />
-                demo.user@example.com
+                mnadeemhassan6270@gmail.com
               </p>
               <p className="flex items-center gap-2 text-sm">
                 <Phone className="w-4 h-4 text-emerald-400" />
-                00000000000
+                03262512750
               </p>
             </div>
           </div>
@@ -1717,16 +1911,16 @@ function Footer() {
           <div>
             <h4 className="font-bold text-lg mb-4 flex items-center gap-2">
               <GraduationCap className="w-5 h-5 text-emerald-400" />
-              Supervisors
+              Advisor Panel
             </h4>
             <div className="space-y-4 text-emerald-200/70">
               <div>
-                <p className="font-medium text-white">Supervisor A</p>
+                <p className="font-medium text-white">Mr. Ali Imran</p>
                 <p className="text-sm">Project Advisor</p>
               </div>
               <div>
-                <p className="font-medium text-white">Supervisor B</p>
-                <p className="text-sm">Committee Member</p>
+                <p className="font-medium text-white">Mr. Ahsan Rehman Gill</p>
+                <p className="text-sm">Member 1</p>
               </div>
             </div>
           </div>
@@ -1734,10 +1928,10 @@ function Footer() {
 
         <div className="mt-12 pt-8 border-t border-emerald-800 flex flex-col sm:flex-row justify-between items-center gap-4">
           <p className="text-emerald-400/60 text-sm">
-            © 2024 Demo App. All rights reserved.
+            © 2026 AI-Based Crop Yield Prediction Project.
           </p>
           <p className="text-emerald-400/60 text-sm">
-            Demo Program - Semester X - Session 20XX-20YY
+            BS CS - Semester 7th - Session 2022-2026
           </p>
         </div>
       </div>
@@ -1750,10 +1944,37 @@ function App() {
   const [activeSection, setActiveSection] = useState('home')
   const [predictionResult, setPredictionResult] = useState<PredictionResult | null>(null)
   const [user, setUser] = useState<User | null>(null)
-  const [currentView, setCurrentView] = useState<'main' | 'login' | 'register'>('main')
+  const [predictionHistory, setPredictionHistory] = useState<PredictionHistoryItem[]>([])
+  const [currentView, setCurrentView] = useState<'main' | 'login' | 'register' | 'account'>('main')
+
+  const fetchPredictionHistory = async () => {
+    const token = localStorage.getItem('access_token')
+    if (!token) {
+      setPredictionHistory([])
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/predictions/history?limit=100`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      if (!response.ok) {
+        setPredictionHistory([])
+        return
+      }
+
+      const rows = (await response.json()) as PredictionHistoryItem[]
+      setPredictionHistory(rows)
+    } catch {
+      setPredictionHistory([])
+    }
+  }
 
   const scrollToSection = (id: string) => {
-    setCurrentView('main')
+    if (currentView !== 'account') {
+      setCurrentView('main')
+    }
     setTimeout(() => {
       const element = document.getElementById(id)
       if (element) {
@@ -1765,14 +1986,33 @@ function App() {
 
   const handleLogin = (userData: User) => {
     setUser(userData)
-    setCurrentView('main')
+    setCurrentView('account')
+    fetchPredictionHistory()
   }
 
   const handleLogout = () => {
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('user')
     setUser(null)
+    setPredictionHistory([])
+    setCurrentView('main')
+  }
+
+  const openAccountPage = () => {
+    setCurrentView('account')
+    fetchPredictionHistory()
   }
 
   useEffect(() => {
+    const savedUser = localStorage.getItem('user')
+    if (savedUser) {
+      try {
+        setUser(JSON.parse(savedUser) as User)
+      } catch {
+        localStorage.removeItem('user')
+      }
+    }
+
     const handleScroll = () => {
       const sections = ['home', 'predict', 'dashboard', 'about']
       const scrollPosition = window.scrollY + 100
@@ -1793,6 +2033,12 @@ function App() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
+  useEffect(() => {
+    if (user) {
+      fetchPredictionHistory()
+    }
+  }, [user])
+
   // Render different views
   if (currentView === 'login') {
     return (
@@ -1804,6 +2050,7 @@ function App() {
           onLogout={handleLogout}
           onLoginClick={() => setCurrentView('login')}
           onRegisterClick={() => setCurrentView('register')}
+          onAccountClick={openAccountPage}
         />
         <LoginPage 
           onLogin={handleLogin} 
@@ -1823,11 +2070,36 @@ function App() {
           onLogout={handleLogout}
           onLoginClick={() => setCurrentView('login')}
           onRegisterClick={() => setCurrentView('register')}
+          onAccountClick={openAccountPage}
         />
         <RegisterPage 
-          onRegister={handleLogin} 
           onSwitchToLogin={() => setCurrentView('login')} 
         />
+      </div>
+    )
+  }
+
+  if (currentView === 'account') {
+    return (
+      <div className="min-h-screen gradient-bg">
+        <Navbar
+          activeSection={activeSection}
+          scrollToSection={scrollToSection}
+          user={user}
+          onLogout={handleLogout}
+          onLoginClick={() => setCurrentView('login')}
+          onRegisterClick={() => setCurrentView('register')}
+          onAccountClick={openAccountPage}
+        />
+        <main>
+          <HeroSection scrollToSection={scrollToSection} />
+          <PredictionSection onPrediction={setPredictionResult} user={user} />
+          <ResultCard result={predictionResult} />
+          <PredictionHistorySection history={predictionHistory} />
+          <DashboardSection />
+          <AboutSection />
+        </main>
+        <Footer />
       </div>
     )
   }
@@ -1841,10 +2113,11 @@ function App() {
         onLogout={handleLogout}
         onLoginClick={() => setCurrentView('login')}
         onRegisterClick={() => setCurrentView('register')}
+        onAccountClick={openAccountPage}
       />
       <main>
         <HeroSection scrollToSection={scrollToSection} />
-        <PredictionSection onPrediction={setPredictionResult} />
+        <PredictionSection onPrediction={setPredictionResult} user={user} />
         <ResultCard result={predictionResult} />
         <DashboardSection />
         <AboutSection />
